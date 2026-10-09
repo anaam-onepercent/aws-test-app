@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AWS test app</title>
+  <style>
+    :root {
+      --ink: #1d2733;
+      --muted: #5c6b7a;
+      --line: #d6dde4;
+      --paper: #f7f9fb;
+      --ok: #1f7a4d;
+      --bad: #b3261e;
+      --act: #23577f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+    h1 { font-size: 1.75rem; margin: 0 0 4px; }
+    p.lead { color: var(--muted); margin: 0 0 32px; }
+    .status {
+      display: grid; grid-template-columns: auto 1fr; gap: 6px 16px;
+      padding: 16px 20px; background: #fff; border: 1px solid var(--line);
+      border-left: 4px solid var(--line); margin-bottom: 32px;
+    }
+    .status.ok { border-left-color: var(--ok); }
+    .status.bad { border-left-color: var(--bad); }
+    .status dt { color: var(--muted); }
+    .status dd { margin: 0; font-weight: 600; word-break: break-word; }
+    .ok-text { color: var(--ok); }
+    .bad-text { color: var(--bad); }
+    h2 { font-size: 1.15rem; margin: 0 0 12px; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input {
+      flex: 1; padding: 10px 12px; font: inherit;
+      border: 1px solid var(--line); background: #fff;
+    }
+    button {
+      padding: 10px 16px; font: inherit; cursor: pointer;
+      border: 1px solid var(--act); background: var(--act); color: #fff;
+    }
+    button.del { background: none; color: var(--muted); border-color: var(--line); padding: 4px 10px; }
+    input:focus-visible, button:focus-visible { outline: 3px solid #8fb8d8; outline-offset: 1px; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 0; border-bottom: 1px solid var(--line);
+    }
+    li small { display: block; color: var(--muted); font-size: 0.8rem; }
+    .empty { color: var(--muted); padding: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AWS test app</h1>
+  <p class="lead">If this page loads, your web server works. The box below checks the database.</p>
+
+  <dl class="status" id="status">
+    <dt>Web server</dt><dd class="ok-text">Working</dd>
+    <dt>Database</dt><dd id="db">Checking…</dd>
+  </dl>
+
+  <h2>Test notes</h2>
+  <form id="form">
+    <input id="text" placeholder="Write a note to save in the database" maxlength="500" required>
+    <button type="submit">Save note</button>
+  </form>
+  <ul id="notes"></ul>
+</main>
+
+<script>
+  const statusBox = document.getElementById("status");
+  const dbEl = document.getElementById("db");
+  const list = document.getElementById("notes");
+
+  async function checkHealth() {
+    try {
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      if (data.database === "ok") {
+        statusBox.className = "status ok";
+        dbEl.className = "ok-text";
+        dbEl.textContent = "Connected (" + data.dbVersion + ")";
+      } else {
+        statusBox.className = "status bad";
+        dbEl.className = "bad-text";
+        dbEl.textContent = "Not connected: " + data.message;
+      }
+    } catch (e) {
+      statusBox.className = "status bad";
+      dbEl.className = "bad-text";
+      dbEl.textContent = "Could not reach the server.";
+    }
+  }
+
+  async function loadNotes() {
+    const res = await fetch("/api/notes");
+    if (!res.ok) { list.innerHTML = '<li class="empty">Notes unavailable until the database connects.</li>'; return; }
+    const notes = await res.json();
+    if (!notes.length) { list.innerHTML = '<li class="empty">No notes yet. Save one above to test the database.</li>'; return; }
+    list.innerHTML = "";
+    for (const n of notes) {
+      const li = document.createElement("li");
+      const div = document.createElement("div");
+      div.textContent = n.text;
+      const time = document.createElement("small");
+      time.textContent = new Date(n.created_at).toLocaleString();
+      div.appendChild(time);
+      const btn = document.createElement("button");
+      btn.className = "del";
+      btn.textContent = "Delete";
+      btn.onclick = async () => { await fetch("/api/notes/" + n.id, { method: "DELETE" }); loadNotes(); };
+      li.append(div, btn);
+      list.appendChild(li);
+    }
+  }
+
+  document.getElementById("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("text");
+    await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: input.value })
+    });
+    input.value = "";
+    loadNotes();
+  });
+
+  checkHealth();
+  loadNotes();
+</script>
+</body>
+</html>
